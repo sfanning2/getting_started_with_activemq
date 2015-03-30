@@ -17,6 +17,8 @@
 
 package com.fusesource.examples.activemq;
 
+import java.lang.reflect.Constructor;
+
 import javax.jms.*;
 import javax.jms.IllegalStateException;
 import javax.naming.Context;
@@ -41,16 +43,29 @@ public class ModuleConsumerProducer implements Runnable{
 
 
     public static void main(String args[]) throws IllegalStateException, ClassNotFoundException {
-    	// Process command line arguments:
-    	// arg1 Consumer Destination
-    	// arg2 Producer Destination
-    	// arg3 Module
-    	
+    	// Process command line arguments:    	    	
     	if (args.length < 3 || args[0] == null || args[1] == null || args[2] == null) {
     		throw new IllegalStateException("Supply Consumer Destination, Producer Destination, and Module.");
     	}
+    	// arg1 Consumer Destination
+    	// arg2 Producer Destination
+    	// arg3 Module
+    	String moduleClassName = args[2];
+    	Class<?> genericModuleClass = Class.forName(moduleClassName);
     	
-    	new ModuleConsumerProducer(args[0],args[1],Class.forName(args[2])).run();
+    	Class<?>[] interfaces = genericModuleClass.getInterfaces();
+		boolean runnable = false;
+    	for (int i = 0; i < interfaces.length; i++) {
+    		Class f = interfaces[i];
+    		if (f == Runnable.class) {
+    			runnable = true;
+    		}
+    	}
+    	if (!runnable) {
+    		throw new IllegalArgumentException("Class must be runnable.");
+    	}
+
+    	new ModuleConsumerProducer(args[0],args[1],(Class<Runnable>) genericModuleClass).run();
     }
     
     /**
@@ -59,7 +74,7 @@ public class ModuleConsumerProducer implements Runnable{
      * @param producerDestinationName Example: "queue/SplitEmUpComplete"
      * @param moduleClass	Example: com.mutulofomaha.samitization.service.split.em.up.module.SplitEmUpModule
      */
-    public ModuleConsumerProducer(String consumerDestinationName, String producerDestinationName, Class<?> moduleClass) {
+    public ModuleConsumerProducer(String consumerDestinationName, String producerDestinationName, Class<Runnable> moduleClass) {
     	this.consumerDestinationName = consumerDestinationName;
     	this.producerDestinationName = producerDestinationName;
     	this.moduleClass = moduleClass;
@@ -101,8 +116,14 @@ public class ModuleConsumerProducer implements Runnable{
                     if (consumerMessage instanceof TextMessage) {
                         String text = ((TextMessage) consumerMessage).getText();
                         LOG.info("Got " + (i++) + ". message: " + text);
+                        //////////
+                        // Run module
+                        Constructor c = this.getConstructorWithId(this.moduleClass);
+                        Runnable runnable = (Runnable) c.newInstance("id_placeholder");
+                        
+                        //////////
                         // Run Split Em Up Module
-                        (new SplitEmUpModule("id_placeholder")).run();
+                        //(new SplitEmUpModule("id_placeholder")).run();
                         // On completion, produce Split Em Up Complete Message
                         TextMessage producerMessage = session.createTextMessage(i + ". message sent from " + SplitEmUpProducer.class.getName());
                         LOG.info("Sending to destination: " + producerDestination.toString() + " this text: '" + producerMessage.getText());
@@ -152,6 +173,18 @@ public class ModuleConsumerProducer implements Runnable{
                 }
             }
         }
+    }
+    
+    private static Constructor getConstructorWithId(Class<?> moduleClass){
+        Constructor<?>[] constructors = moduleClass.getConstructors();
+        for (int i = 0; i < constructors.length; i++) {
+        	Constructor c = constructors[i];
+        	Class[] params = c.getParameterTypes();
+        	if ( params.length == 1 && params[0] == String.class) {
+        		return c;
+        	}
+        }
+        return null;
     }
     
 }
