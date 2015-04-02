@@ -18,6 +18,8 @@
 package com.fusesource.examples.activemq;
 
 import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
+import java.util.List;
 
 import javax.jms.*;
 import javax.jms.IllegalStateException;
@@ -40,6 +42,13 @@ public class ModuleConsumerProducer implements Runnable{
     
     // Producer variables
     private final String producerDestinationName;
+    
+    // Connection variables
+    private Connection connection = null;
+    private Session session = null;
+    private MessageConsumer consumer = null;
+    private MessageProducer producer = null;
+    private Destination producerDestination = null;
 
 
     public static void main(String args[]) throws IllegalStateException, ClassNotFoundException {
@@ -65,7 +74,7 @@ public class ModuleConsumerProducer implements Runnable{
     		throw new IllegalArgumentException("Class must be runnable.");
     	}
 
-    	new ModuleConsumerProducer(args[0],args[1],(Class<Runnable>) genericModuleClass).run();
+    	new ModuleConsumerProducer(args[0],args[1],genericModuleClass).run();
     }
     
     /**
@@ -74,17 +83,13 @@ public class ModuleConsumerProducer implements Runnable{
      * @param producerDestinationName Example: "queue/SplitEmUpComplete"
      * @param moduleClass	Example: com.mutulofomaha.samitization.service.split.em.up.module.SplitEmUpModule
      */
-    public ModuleConsumerProducer(String consumerDestinationName, String producerDestinationName, Class<Runnable> moduleClass) {
+    public ModuleConsumerProducer(String consumerDestinationName, String producerDestinationName, Class<?> moduleClass) {
     	this.consumerDestinationName = consumerDestinationName;
     	this.producerDestinationName = producerDestinationName;
     	this.moduleClass = moduleClass;
     }
 
     public void run() {
-        Connection connection = null;
-        Session session = null;
-        MessageConsumer consumer = null;
-        MessageProducer producer = null;
 
         try {
             // JNDI lookup of JMS Connection Factory and JMS Destination
@@ -104,7 +109,7 @@ public class ModuleConsumerProducer implements Runnable{
             LOG.info("Start consuming messages from " + consumerDestination.toString() + " with " + MESSAGE_TIMEOUT_MILLISECONDS + "ms timeout");
             
             // Set up Producer
-            Destination producerDestination = (Destination) context.lookup(producerDestinationName);
+            producerDestination = (Destination) context.lookup(producerDestinationName);
 
             producer = session.createProducer(producerDestination);
 
@@ -113,29 +118,16 @@ public class ModuleConsumerProducer implements Runnable{
             while (true) {
                 Message consumerMessage = consumer.receive(MESSAGE_TIMEOUT_MILLISECONDS);
                 if (consumerMessage != null) {
-                    if (consumerMessage instanceof TextMessage) {
-                        String text = ((TextMessage) consumerMessage).getText();
-                        LOG.info("Got " + (i++) + ". message: " + text);
-                        //////////
-                        // Run module
-                        Constructor c = this.getConstructorWithId(this.moduleClass);
-                        Runnable runnable = (Runnable) c.newInstance("id_placeholder");
-                        
-                        //////////
-                        // Run Split Em Up Module
-                        //(new SplitEmUpModule("id_placeholder")).run();
-                        // On completion, produce Split Em Up Complete Message
-                        TextMessage producerMessage = session.createTextMessage(i + ". message sent from " + SplitEmUpProducer.class.getName());
-                        LOG.info("Sending to destination: " + producerDestination.toString() + " this text: '" + producerMessage.getText());
-                        producer.send(producerMessage);
-                    }
+                    processMessage(consumerMessage, i);
                 } else {
                     break;
                 }
             }
 
+            producer.close();
             consumer.close();
             session.close();
+            connection.close();
         } catch (Throwable t) {
             LOG.error(t);
         } finally {
@@ -172,6 +164,25 @@ public class ModuleConsumerProducer implements Runnable{
                     LOG.error(e);
                 }
             }
+        }
+    }
+    
+    private void processMessage(Message consumerMessage, int i) throws JMSException, InstantiationException, IllegalAccessException, IllegalArgumentException, InvocationTargetException{
+    	if (consumerMessage instanceof TextMessage) {
+            String text = ((TextMessage) consumerMessage).getText();
+            LOG.info("Got " + (i++) + ". message: " + text);
+            //////////
+            // Run module
+            Constructor c = this.getConstructorWithId(this.moduleClass);
+            Runnable runnable = (Runnable) c.newInstance("id_placeholder");
+            runnable.run();
+            List<String> ids;
+            //////////
+
+            // On completion, produce Complete Message
+            TextMessage producerMessage = session.createTextMessage(i + ". message sent from " + this.moduleClass.getName());
+            LOG.info("Sending to destination: " + producerDestination.toString() + " this text: '" + producerMessage.getText());
+            producer.send(producerMessage);
         }
     }
     
