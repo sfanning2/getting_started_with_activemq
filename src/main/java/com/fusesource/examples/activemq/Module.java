@@ -1,6 +1,6 @@
 package com.fusesource.examples.activemq;
 
-import java.util.concurrent.atomic.AtomicReferenceArray;
+import java.util.List;
 
 public interface Module {
 	enum Status {
@@ -25,7 +25,7 @@ public interface Module {
 	 * is not completed, results are not guaranteed. 
 	 * @return
 	 */
-	public AtomicReferenceArray<String> getCompletedIds();
+	public List<String> getCompletedIds();
 	
 	/**
 	 * The current status of the Module

@@ -3,14 +3,14 @@ package com.fusesource.examples.activemq;
 import java.util.ArrayList;
 import java.util.List;
 
-public class SplitEmUpModule implements Runnable, Module{
+public class RedactionModule implements Runnable, Module{
 
 	private final String id;
 	
 	private ArrayList<String> ids;
 	private Status status;
 	
-	public SplitEmUpModule(String id) {
+	public RedactionModule(String id) {
 		this.id = id;
 	}
 	
